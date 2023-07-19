@@ -3,7 +3,6 @@ import os
 import functools
 from astropy import units as u, cosmology
 import numpy as np
-import datetime
 import matplotlib
 label_size = 16
 matplotlib.rcParams['ytick.labelsize'] = label_size
@@ -22,51 +21,6 @@ try:
 except ImportError:
     raise Exception("Install pynufft")
     FINUFFT_NUNU = None
-
-
-# FIXME: Make it plotting polarisation when NU pixel is used!
-
-
-def convert_difmap_model_file_to_CCFITS(difmap_model_file, stokes, mapsize, restore_beam, uvfits_template, out_ccfits,
-                                        show_difmap_output=True):
-    """
-    Using difmap-formated model file (e.g. flux, r, theta) obtain convolution of your model with the specified beam.
-
-    :param difmap_model_file:
-        Difmap-formated model file. Use ``JetImage.save_image_to_difmap_format`` to obtain it.
-    :param stokes:
-        Stokes parameter.
-    :param mapsize:
-        Iterable of image size and pixel size (mas).
-    :param restore_beam:
-        Beam to restore: bmaj(mas), bmin(mas), bpa(deg).
-    :param uvfits_template:
-        Template uvfits observation to use. Difmap can't read model without having observation at hand.
-    :param out_ccfits:
-        File name to save resulting convolved map.
-    :param show_difmap_output: (optional)
-        Boolean. Show Difmap output? (default: ``True``)
-    """
-    stamp = datetime.datetime.now()
-    command_file = "difmap_commands_{}".format(stamp.isoformat())
-    difmapout = open(command_file, "w")
-    difmapout.write("observe " + uvfits_template + "\n")
-    difmapout.write("select " + stokes + "\n")
-    difmapout.write("rmodel " + difmap_model_file + "\n")
-    difmapout.write("mapsize " + str(mapsize[0]) + "," + str(mapsize[1]) + "\n")
-    print("Restoring difmap model with BEAM : bmin = " + str(restore_beam[1]) + ", bmaj = " + str(restore_beam[0]) + ", " + str(restore_beam[2]) + " deg")
-    # default dimfap: false,true (parameters: omit_residuals, do_smooth)
-    difmapout.write("restore " + str(restore_beam[1]) + "," + str(restore_beam[0]) + "," + str(restore_beam[2]) +
-                    "," + "true,false" + "\n")
-    difmapout.write("wmap " + out_ccfits + "\n")
-    difmapout.write("exit\n")
-    difmapout.close()
-
-    shell_command = "difmap < " + command_file + " 2>&1"
-    if not show_difmap_output:
-        shell_command += " >/dev/null"
-    os.system(shell_command)
-    os.unlink(command_file)
 
 
 class JetImage(ABC):
@@ -521,59 +475,3 @@ def plot_raw(txt, label, extent, savename=None):
     if savename is not None:
         fig.savefig(savename, bbox_inches="tight", dpi=300)
     plt.show()
-
-
-if __name__ == "__main__":
-
-    # This applies to my local work in CLion. Change it to ``Release`` (or whatever) if necessary.
-    jetpol_run_directory = "Release"
-    n_along = 1000
-    n_across = 100
-    lg_pixel_size_mas_min = np.log10(0.025)
-    # lg_pixel_size_mas_min = np.log10(0.003)
-    # lg_pixel_size_mas_max = np.log10(0.1)
-    lg_pixel_size_mas_max = np.log10(0.05)
-    freq_ghz_high = 15.4
-    freq_ghz_low = None
-    # mhd_code = "best"
-    # mhd_code = "m2s10g2b44.614955r0.000595"
-    # mhd_code = "m1s10g2b123.971372r0.000369"
-    mhd_code = "m1s10g2b123.971372r0.000369_psi_1.000000_dpsi_0.015000"
-    # mhd_code = "m1s10g2b123.971372r0.000369_psi_0.750000_dpsi_0.015000"
-    rt_code = "n1"
-
-    plot_images(mhd_code=mhd_code, rt_code=rt_code, freq_ghz_high=freq_ghz_high, freq_ghz_low=freq_ghz_low,
-                n_along=n_along, n_across=n_across,
-                lg_pixel_size_mas_min=lg_pixel_size_mas_min, lg_pixel_size_mas_max=lg_pixel_size_mas_max,
-                cmap="jet", plot_beta_app=True)
-
-    import sys; sys.exit(0)
-
-
-    # Test case - just plotting picture
-    # stokes = ("I", "Q", "U", "V")
-    stokes = ("I",)
-    # FIXME: Substitute with values used in radiative transfer
-    cjms = [JetImage(z=0.00436, n_along=200, n_across=50, lg_pixel_size_mas_min=np.log10(0.05),
-                     lg_pixel_size_mas_max=np.log10(0.05), jet_side=False) for _ in stokes]
-    for i, stk in enumerate(stokes):
-        cjms[i].load_image_stokes(stk, "{}/cjet_image_{}.txt".format(jetpol_run_directory, stk.lower()))
-
-    jms = [JetImage(z=0.00436, n_along=200, n_across=50, lg_pixel_size_mas_min=np.log10(0.05),
-                    lg_pixel_size_mas_max=np.log10(0.05), jet_side=True) for _ in stokes]
-    for i, stk in enumerate(stokes):
-        jms[i].load_image_stokes(stk, "{}/jet_image_{}.txt".format(jetpol_run_directory, stk.lower()))
-
-    j = TwinJetImage(jms[0], cjms[0])
-    j.plot_contours(zoom_fr=0.2, nlevels=20, aspect="auto")
-    plt.show()
-
-    # # Test case - convolving model image with beam (for comparing with CLEAN maps)
-    # stokes = ("I", "Q", "U")
-    # jms = [JetImage(z=0.05, n_along=600, n_across=200, lg_pixel_size_mas_min=-3, lg_pixel_size_mas_max=-1, jet_side=True) for _ in stokes]
-    # for i, stk in enumerate(stokes):
-    #     jms[i].load_image_stokes(stk, "../{}/jet_image_{}.txt".format(jetpol_run_directory, stk.lower()))
-    #     jms[i].save_image_to_difmap_format("dfm_{}.mod".format(stk))
-    #     convert_difmap_model_file_to_CCFITS("dfm_{}.mod".format(stk), stk, (512, 0.1), (0.6, 0.6, 0), "1458+718.u.2006_09_06.uvf",
-    #                                         "convolved_{}.fits".format(stk))
-
