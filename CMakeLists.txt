@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
-project(bk_transfer)
+project(simulate)
 
-# Add path to symphony.h
 include_directories("/usr/include/eigen3", "include")
 
 set(CMAKE_CXX_STANDARD 14)
@@ -14,19 +13,14 @@ set(SOURCE_FILES src/main.cpp src/utils.cpp src/Pixel.cpp src/Ray.cpp
         include/MyExceptions.h include/logspace.h include/linspace.h src/Intersection.cpp src/BField.cpp
         src/NField.cpp src/VField.cpp src/Jet.cpp src/ParticlesDistribution.cpp
         src/Observation.cpp src/System.cpp src/main.cpp)
-add_executable(bk_transfer ${SOURCE_FILES})
+add_executable(simulate ${SOURCE_FILES})
 
 
 # Require MPI for this project:
 find_package(MPI REQUIRED)
 
-
-#find_library(FOO_LIB symphony)
-#message("${FOO_LIB}")
-
-
 set(CMAKE_CXX_COMPILE_FLAGS ${CMAKE_CXX_COMPILE_FLAGS} ${MPI_COMPILE_FLAGS})
 set(CMAKE_CXX_LINK_FLAGS ${CMAKE_CXX_LINK_FLAGS} ${MPI_LINK_FLAGS})
 include_directories(${MPI_INCLUDE_PATH})
 message("${MPI_INCLUDE_PATH}")
-target_link_libraries(bk_transfer ${MPI_LIBRARIES})
+target_link_libraries(simulate ${MPI_LIBRARIES})
