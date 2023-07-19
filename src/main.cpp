@@ -26,7 +26,7 @@ namespace ph = std::placeholders;
 typedef std::chrono::high_resolution_clock Clock;
 
 
-void run_on_analytic(double redshift, double los_angle, double cone_half_angle, double Gamma, double B_1, double m,
+void run_on_analytic(double frequency_ghz, double redshift, double los_angle, double cone_half_angle, double Gamma, double B_1, double m,
 					 double pitch_angle, double tangled_fraction) {
 	auto t1 = Clock::now();
 	std::clock_t start;
@@ -45,7 +45,7 @@ void run_on_analytic(double redshift, double los_angle, double cone_half_angle, 
 //    double los_angle = 0.75*M_PI/180.0;
 
 	// Observed frequencies in GHz
-    std::vector<double> nu_observed_ghz{15.4};
+    std::vector<double> nu_observed_ghz{frequency_ghz};
     std::vector<double> total_fluxes;
     // Frequencies in the BH frame in Hz
     std::vector<double> nu_bh;
@@ -293,21 +293,22 @@ void run_on_analytic(double redshift, double los_angle, double cone_half_angle, 
 }
 
 int main(int argc, char *argv[]) {
-	if(argc != 9){
+	if(argc != 10){
 		std::cout << argc << "\n";
-		std::cout << "Supply: redshift, LOS-angle (deg), cone half-opening angle (deg), Gamma, B_1 (G), m,"
-					 "pitch-angle (deg), tangled_fraction\n";
+		std::cout << "Supply: observed frequency (GHz), redshift, LOS-angle (deg), cone half-opening angle (deg), Gamma,"
+					 " B_1 (G), m,  pitch-angle (deg), tangled_fraction\n";
 		return 1;
 	}
-	double redshift = atof(argv[1]);
-	double los_angle_deg = atof(argv[2]);
-	double cone_half_angle_deg = atof(argv[3]);
-	double Gamma = atof(argv[4]);
-	double B_1 = atof(argv[5]);
-	double m = atof(argv[6]);
-	double pitch_angle_deg = atof(argv[7]);
-	double tangled_fraction = atof(atgv[8]);
-    run_on_analytic(redshift, los_angle_deg*M_PI/180., cone_half_angle_deg*M_PI/180., Gamma, B_1, m,
+	double frequency_ghz = atof(argv[1]);
+	double redshift = atof(argv[2]);
+	double los_angle_deg = atof(argv[3]);
+	double cone_half_angle_deg = atof(argv[4]);
+	double Gamma = atof(argv[5]);
+	double B_1 = atof(argv[6]);
+	double m = atof(argv[7]);
+	double pitch_angle_deg = atof(argv[8]);
+	double tangled_fraction = atof(argv[9]);
+    run_on_analytic(frequency_ghz, redshift, los_angle_deg*M_PI/180., cone_half_angle_deg*M_PI/180., Gamma, B_1, m,
 					pitch_angle_deg*M_PI/180., tangled_fraction);
     return 0;
 }

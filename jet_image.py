@@ -161,7 +161,7 @@ class JetImage(ABC):
     def load_image_stokes(self, stokes, image_stokes_file, scale=1.0):
         self.stokes = stokes
         image = np.loadtxt(image_stokes_file)
-        print("Loaded image with total flux = {} Jy, shape = {}".format(np.nansum(image), image.shape))
+        print("Loaded image with total flux = {:.3f} Jy, shape = {}".format(np.nansum(image), image.shape))
         print("Scaling image x ", scale)
         image *= scale
         image[np.isnan(image)] = 0.0

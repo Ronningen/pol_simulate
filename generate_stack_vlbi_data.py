@@ -1,19 +1,18 @@
 import os
-import glob
+import sys
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
+import argparse
 import numpy as np
 import math
 import matplotlib
 matplotlib.use('Agg')
-import sys
 from jet_image import JetImage, TwinJetImage
 from vlbi_utils import find_image_std, find_bbox, pol_mask, correct_ppol_bias
-import sys
 sys.path.insert(0, 've/vlbi_errors')
 from uv_data import UVData
-from spydiff import clean_difmap, find_nw_beam
+from spydiff import clean_difmap
 from from_fits import create_clean_image_from_fits_file
 from image import plot as iplot
 import matplotlib.pyplot as plt
@@ -212,104 +211,122 @@ def theta_plasma(theta_obs, Gamma):
     return np.arctan((np.sin(theta_obs)*np.sqrt(1 - beta(Gamma)**2))/(np.cos(theta_obs) - beta(Gamma)))
 
 
-def generate_model_images(parallels_run_file, cone_half_angle, LOS_angels_rad, epochs, exec_dir, calculon=False):
-    cwd = os.getcwd()
-    # Construct params file
-    with open(f"{parallels_run_file}", "w+") as fo:
-        for epoch, los_angle_rad in zip(epochs, LOS_angels_rad):
-            fo.write("{} {} {}".format(los_angle_rad, cone_half_angle, epoch))
-            fo.write("\n")
-
-    os.chdir(exec_dir)
-    n_jobs = 4
-    if calculon:
-        n_jobs = 44
-    os.system("parallel --files --results generate_model_images_epoch_{3}" + f" --joblog log --jobs {n_jobs} -a {parallels_run_file} -n 1 -m --colsep ' ' \"./bk_transfer\"")
-    os.chdir(cwd)
-
-
 if __name__ == "__main__":
 
-    save_dir = None
-    # Work on calculon?
-    calculon = True
-    # Set working directory according to this:
-    # FIXME: You should change this accordingly!
-    if calculon:
-        # Path to the repo
-        base_dir = "/home/ilya/github/wandering-jet"
-    else:
-        base_dir = "/home/ilya/github/time_machine/bk_transfer"
+    CLI = argparse.ArgumentParser("Simulation of polarimetric VLBI observations of AGN jets with a spiral magnetic fields")
+    CLI.add_argument("--template_uvfits",
+                     type=str,
+                     help="UVFITS file with the observed data used as a template for creating artificial data")
+    CLI.add_argument("--redshift",
+                     type=float,
+                     default=0.5,
+                     help="Redshift of the source (default: 0.5)")
+    CLI.add_argument("--los_angle_deg",
+                     type=float,
+                     default=5.,
+                     help="Viewing angle of the jet in degrees (default: 5)")
+    CLI.add_argument("--cone_half_angle_deg",
+                     type=float,
+                     default=0.5,
+                     help="Half-opening angle of the jet cone in degrees (default: 0.5)")
+    CLI.add_argument("--Gamma",
+                     type=float,
+                     default=5.,
+                     help="Lorentz-factor of the jet bulk motion (default: 5)")
+    CLI.add_argument("--B_1_Gauss",
+                     type=float,
+                     default=0.5,
+                     help="Magnetic field value (in G) at distance 1 pc from the BH (default: 0.5)")
+    CLI.add_argument("--m",
+                     type=float,
+                     default=1.0,
+                     help="Value of the exponent of the magnetic field power-law dependency on the distance along a jet: B ~ z^{-m} (default: 1.0)")
+    CLI.add_argument("--pitch_angle_deg",
+                     type=float,
+                     default=60.,
+                     help="Pitch angle (in the plasma frame!) of the jet spiral magnetic field in degrees (default: 60)")
+    CLI.add_argument("--tangled_fraction",
+                     type=float,
+                     default=0.0,
+                     help="Fraction of the tangled magnetic field (default: 0)")
+    CLI.add_argument("--rot_angle_deg",
+                     type=float,
+                     default=0.,
+                     help="Rotation (in degrees) of the model jet from South to positive RA axis (default: 0)")
+    CLI.add_argument("--noise_scale_factor",
+                     type=float,
+                     default=1.0,
+                     help="Coefficient to scale the noise. E.g. to decrease 10x times use ``0.1`` (default: 1)")
+
+    args = CLI.parse_args()
+
+    template_uvfits = args.template_uvfits
 
 
-    # Will be used in folder name containing results. Just to distinguish the results obtained with different models
-    # of magnetic field or particle density. E.g. ``toroidal``, ``equipartition_toroidal``, ...
-    short_model_description = "RP_equipartition"
+    rot_angle_deg = args.rot_angle_deg
+    redshift = args.redshift
+    los_angle_deg = args.los_angle_deg
+    cone_half_angle_deg = args.cone_half_angle_deg
+    Gamma = args.Gamma
+    B_1 = args.B_1_Gauss
+    m = args.m
+    pitch_angle_deg = args.pitch_angle_deg
+    tangled_fraction = args.tangled_fraction
+    noise_scale_factor = args.noise_scale_factor
 
-    # Source area - used in plotting pics and noise estimation
-    blc = (235, 200)
-    trc = (460, 315)
+    if cone_half_angle_deg >= los_angle_deg:
+        raise Exception("Don't look inside the cone! :)")
+
+    print("LOS angle in the plasma frame = {:.1f} deg".format(np.rad2deg(theta_plasma(np.deg2rad(los_angle_deg), Gamma))))
+
+    # Parameters of the model image with non-uniform pixel size
+    n_along = 500
+    n_across = 300
+    lg_pixel_size_mas_min = np.log10(0.01)
+    lg_pixel_size_mas_max = np.log10(0.1)
+
+    cwd = os.getcwd()
+    base_dir = cwd
+    exec_dir = "{}/Release".format(base_dir)
+    save_dir = os.path.join(base_dir, "results")
+    # Create synthetic UVFITS files
+    uvdata = UVData(template_uvfits)
+    freq_ghz = np.round(uvdata.frequency/1e+09, 2)
+    print("Using template UVFITS: {} at {} GHz".format(os.path.split(template_uvfits)[-1], freq_ghz))
+
+    mapsize_clean = (1024, 0.1)
+
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
 
     ####################################################################################################################
     ############################# No need to change anything below this line ###########################################
     ####################################################################################################################
 
-    if calculon:
-        n_jobs = 44
-    else:
-        n_jobs = 4
-
     stokes = ("I", "Q", "U")
 
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
-    freq_ghz = 15.4
-    # Multiplicative factor for noise added to model visibilities. ``1.0`` means the same noise as in the observed data
-    noise_scale_factor = 1.0
-    # Used in CLEAN
-    mapsize = (512, 0.1)
-
-    # 1641+399 stack beam from Pushkarev+2023
-    common_beam = (0.73, 0.73, 0)
-
-    npixels_beam = int(np.pi*common_beam[0]*common_beam[1]/(4*np.log(2)*mapsize[1]**2))
-    print("#pixels in beam = {}".format(npixels_beam))
-
-    jetpol_run_directory = "{}/Release".format(base_dir)
-
-    # C++ code run parameters
-    # M87
-    # z = 0.00436
-    # 1641+399
-    z = 0.59
-    n_along = 500
-    n_across = 300
-    lg_pixel_size_mas_min = np.log10(0.01)
-    lg_pixel_size_mas_max = np.log10(0.1)
     resolutions = np.logspace(lg_pixel_size_mas_min, lg_pixel_size_mas_max, n_along)
     print("Model jet extends up to {:.1f} mas!".format(np.sum(resolutions)))
 
     # Plot only jet emission and do not plot counter-jet?
     jet_only = True
     path_to_script = "{}/scripts/script_clean_rms".format(base_dir)
-    parallels_run_file = "{}/parallels_run.txt".format(base_dir)
 
     images_i = list()
     images_q = list()
     images_u = list()
     images_pang = list()
 
-    # Generate images in parallel
-    if redo_model_image_generation:
-        generate_model_images(parallels_run_file, cone_half_angle, LOS_angels_rad, epochs, jetpol_run_directory,
-                              calculon=calculon)
-
+    # Generate model image
+    os.chdir(exec_dir)
+    os.system(f"./bk_transfer {freq_ghz} {redshift} {los_angle_deg} {cone_half_angle_deg} {Gamma} {B_1} {m}"
+              f" {pitch_angle_deg} {tangled_fraction}")
+    os.chdir(cwd)
 
     # Plot true image of polarization
-    imagei = np.loadtxt(os.path.join(jetpol_run_directory, "{}/jet_image_{}_{}.txt".format(jetpol_run_directory, "i", freq_ghz)))
-    imageq = np.loadtxt(os.path.join(jetpol_run_directory, "{}/jet_image_{}_{}.txt".format(jetpol_run_directory, "q", freq_ghz)))
-    imageu = np.loadtxt(os.path.join(jetpol_run_directory, "{}/jet_image_{}_{}.txt".format(jetpol_run_directory, "u", freq_ghz)))
+    imagei = np.loadtxt(os.path.join(exec_dir, "{}/jet_image_{}_{}.txt".format(exec_dir, "i", freq_ghz)))
+    imageq = np.loadtxt(os.path.join(exec_dir, "{}/jet_image_{}_{}.txt".format(exec_dir, "q", freq_ghz)))
+    imageu = np.loadtxt(os.path.join(exec_dir, "{}/jet_image_{}_{}.txt".format(exec_dir, "u", freq_ghz)))
     mask = imagei == 0
     imagei[mask] = np.nan
     imageq[mask] = np.nan
@@ -318,7 +335,6 @@ if __name__ == "__main__":
     imagepang = 0.5*np.arctan2(imageu, imageq)
 
     min_abs_lev = 0.001*np.max(imagei)
-
     fig = plot_function(contours=imagei, colors=imagep, vectors=imagepang, vectors_values=None, min_rel_level=0.001,
                         vinc=10, contour_color="gray", vector_color="k", cmap="gist_rainbow", quiver_linewidth=0.01,
                         vector_enlarge_factor=8, colorbar_label="PPOL, Jy/pixel", contour_linewidth=1.0)
@@ -326,90 +342,71 @@ if __name__ == "__main__":
     fig.savefig(os.path.join(save_dir, "true_pol.png"), dpi=300, bbox_inches="tight")
     plt.close()
 
+    # Estimate thermal noise in real data
+    noise = uvdata.noise(average_freq=False, use_V=False)
+    # If one needs to decrease the noise added to the model visibilities - this is the way to do it
+    for baseline, baseline_noise_std in noise.items():
+        noise.update({baseline: noise_scale_factor*baseline_noise_std})
 
-    # Create synthetic UVFITS files
-    if redo_artificial_uvfits_creation:
+    stokes = ("I", "Q", "U", "V")
+    jms = [JetImage(z=redshift, n_along=n_along, n_across=n_across,
+                    lg_pixel_size_mas_min=lg_pixel_size_mas_min, lg_pixel_size_mas_max=lg_pixel_size_mas_max,
+                    jet_side=True, rot=np.deg2rad(rot_angle_deg)) for _ in stokes]
+    # cjms = [JetImage(z=z, n_along=n_along, n_across=n_across,
+    #                  lg_pixel_size_mas_min=lg_pixel_size_mas_min, lg_pixel_size_mas_max=lg_pixel_size_mas_max,
+    #                  jet_side=False) for _ in stokes]
+    for i, stk in enumerate(stokes):
+        jms[i].load_image_stokes(stk, "{}/jet_image_{}_{:.2f}.txt".format(exec_dir, stk.lower(), freq_ghz), scale=1.0)
+        # cjms[i].load_image_stokes(stk, "../{}/cjet_image_{}_{}.txt".format(jetpol_run_directory, stk.lower(), freq_ghz), scale=1.0)
 
-        template_uvfits = None
-        print("Using template UVFITS: ", template_uvfits)
+    # List of models (for J & CJ) for all stokes
+    # js = [TwinJetImage(jms[i], cjms[i]) for i in range(len(stokes))]
 
-        uvdata = UVData(template_uvfits)
-        noise = uvdata.noise(average_freq=False, use_V=False)
-        # If one needs to decrease the noise this is the way to do it
-        for baseline, baseline_noise_std in noise.items():
-            noise.update({baseline: noise_scale_factor*baseline_noise_std})
+    uvdata.zero_data()
+    if jet_only:
+        uvdata.substitute(jms)
+    else:
+        # uvdata.substitute(js)
+        pass
+    # Rotate EVPA also
+    uvdata.rotate_evpa(np.deg2rad(rot_angle_deg))
+    uvdata.noise_add(noise)
+    # This should work for most of the MOJAVE data files
+    downscale_by_freq = False
+    artificial_uvfits = os.path.join(save_dir, "artificial.uvf")
+    uvdata.save(artificial_uvfits, rewrite=True, downscale_by_freq=downscale_by_freq)
 
-        stokes = ("I", "Q", "U", "V")
-        jms = [JetImage(z=z, n_along=n_along, n_across=n_across,
-                        lg_pixel_size_mas_min=lg_pixel_size_mas_min, lg_pixel_size_mas_max=lg_pixel_size_mas_max,
-                        jet_side=True, rot=np.deg2rad(rot_angle_deg)) for _ in stokes]
-        # cjms = [JetImage(z=z, n_along=n_along, n_across=n_across,
-        #                  lg_pixel_size_mas_min=lg_pixel_size_mas_min, lg_pixel_size_mas_max=lg_pixel_size_mas_max,
-        #                  jet_side=False) for _ in stokes]
-        for i, stk in enumerate(stokes):
-            jms[i].load_image_stokes(stk, "{}/jet_image_{}_{}.txt".format(exec_dir, stk.lower(), 15.4), scale=1.0)
-            # cjms[i].load_image_stokes(stk, "../{}/cjet_image_{}_{}.txt".format(jetpol_run_directory, stk.lower(), freq_ghz), scale=1.0)
+    # CLEAN synthetic UV-data
+    stokes = ("I", "Q", "U")
+    base_name = os.path.split(artificial_uvfits)[-1]
+    base_name = base_name.split(".")[0]
+    for stk in stokes:
+        outfname = "{}_{}.fits".format(base_name, stk.lower())
+        if os.path.exists(os.path.join(save_dir, outfname)):
+            os.unlink(os.path.join(save_dir, outfname))
+        clean_difmap(fname=artificial_uvfits, path=save_dir,
+                     outfname=outfname, outpath=save_dir, stokes=stk.lower(),
+                     mapsize_clean=mapsize_clean, path_to_script=path_to_script,
+                     show_difmap_output=True)
 
-        # List of models (for J & CJ) for all stokes
-        # js = [TwinJetImage(jms[i], cjms[i]) for i in range(len(stokes))]
-
-        uvdata.zero_data()
-        if jet_only:
-            uvdata.substitute(jms)
-        else:
-            # uvdata.substitute(js)
-            pass
-        # Rotate EVPA also
-        uvdata.rotate_evpa(np.deg2rad(rot_angle_deg))
-        uvdata.noise_add(noise)
-        downscale_by_freq = False
-        uvdata.save(os.path.join(save_dir, "artificial.uvf"), rewrite=True, downscale_by_freq=downscale_by_freq)
-
-
-
-
-
-
-
-
-
-
-
-
-    # CLEAN synthetic UV-data in parallel
-    if redo_clean:
-        mapsize_clean = (int(mapsize_clean[0]), mapsize_clean[1])
-        stokes = ("I", "Q", "U")
-        base_name = os.path.split(uvfits_file)[-1]
-        base_name = base_name.split(".")[0]
-        for stk in stokes:
-            outfname = "{}_{}.fits".format(base_name, stk.lower())
-            if os.path.exists(os.path.join(save_dir, outfname)):
-                os.unlink(os.path.join(save_dir, outfname))
-            clean_difmap(fname=uvfits_file, path=save_dir,
-                         outfname=outfname, outpath=save_dir, stokes=stk.lower(),
-                         mapsize_clean=mapsize_clean, path_to_script=path_to_script,
-                         show_difmap_output=False,
-                         beam_restore=beam_restore)
-
-
-
-
-
-
-    # Plot pictures
-
-    ccimages = {stk: create_clean_image_from_fits_file(os.path.join(save_dir, "artificial_{}.fits".format(stk.lower())))
-                for stk in stokes}
+    # Plot CLEAN images
+    ccimages = dict()
+    for stk in stokes:
+        outfname = "{}_{}.fits".format(base_name, stk.lower())
+        ccimages.update({stk: create_clean_image_from_fits_file(os.path.join(save_dir, outfname))})
     ipol = ccimages["I"].image
     beam = ccimages["I"].beam
+    blc = None
+    trc = None
     # Number of pixels in beam
-
+    npixels_beam = int(np.pi*beam[0]*beam[1]/(4*np.log(2)*mapsize_clean[1]**2))
+    plot_beam = (beam[0], beam[1], np.rad2deg(beam[2]))
     std = find_image_std(ipol, beam_npixels=npixels_beam, blc=blc, trc=trc)
-    print("IPOL image std = {} mJy/beam".format(1000*std))
+    print("IPOL image std = {:.2f} mJy/beam".format(1000*std))
     if blc is None or trc is None:
-        blc, trc = find_bbox(ipol, level=4*std, min_maxintensity_mjyperbeam=100*std,
-                             min_area_pix=20*npixels_beam, delta=10)
+        blc, trc = find_bbox(ipol, level=4*std, min_maxintensity_mjyperbeam=4*std,
+                             min_area_pix=10*npixels_beam, delta=10)
+        print("Find bbox results : ", blc, trc)
         if blc[0] == 0: blc = (blc[0]+1, blc[1])
         if blc[1] == 0: blc = (blc[0], blc[1]+1)
         if trc[0] == ipol.shape: trc = (trc[0]-1, trc[1])
@@ -436,7 +433,7 @@ if __name__ == "__main__":
     fig = iplot(contours=ipol, vectors=pang,
                 x=ccimages["I"].x, y=ccimages["I"].y, vinc=4, contour_linewidth=0.25,
                 vectors_mask=masks_dict["P"], abs_levels=[3*std], blc=blc, trc=trc,
-                beam=common_beam, close=True, show_beam=True, show=False,
+                beam=plot_beam, close=True, show_beam=True, show=False,
                 contour_color='gray', fig=fig, vector_color="black", plot_colorbar=False)
     axes = fig.get_axes()[0]
     axes.invert_xaxis()
@@ -446,7 +443,7 @@ if __name__ == "__main__":
 
     fig = iplot(ipol, fpol, x=ccimages["I"].x, y=ccimages["I"].y,
                 min_abs_level=4*std, colors_mask=masks_dict["P"], color_clim=[0, 0.7], blc=blc, trc=trc,
-                beam=common_beam, close=True, colorbar_label="m", show_beam=True, show=False,
+                beam=plot_beam, close=True, colorbar_label="m", show_beam=True, show=False,
                 cmap='gnuplot', contour_color='black', plot_colorbar=True,
                 contour_linewidth=0.25)
     fig.savefig(os.path.join(save_dir, "observed_fpol.png"), dpi=600, bbox_inches="tight")
