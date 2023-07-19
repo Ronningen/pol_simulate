@@ -10,10 +10,20 @@ make
 pip install . --user
 ```
 
-Install and compile our simulation code:
+
+Download code for simulations of VLBI observations:
 ```shell
 git clone --recursive https://github.com/ipashchenko/school2023.git
 cd school2023
+```
+
+Install ``eigen`` linear algebra library. Make sure it is properly referenced in ``CMakeLists.txt``. E.g.:
+```cmake
+include_directories("/usr/include/eigen3", "include")
+```
+
+Compile C++ code for radiation transfer:
+```shell
 mkdir Release; cd Release
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make
