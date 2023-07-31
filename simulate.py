@@ -319,7 +319,7 @@ if __name__ == "__main__":
 
     # Generate model image
     os.chdir(exec_dir)
-    os.system(f"./bk_transfer {freq_ghz} {redshift} {los_angle_deg} {cone_half_angle_deg} {Gamma} {B_1} {m}"
+    os.system(f"./simulate {freq_ghz} {redshift} {los_angle_deg} {cone_half_angle_deg} {Gamma} {B_1} {m}"
               f" {pitch_angle_deg} {tangled_fraction}")
     os.chdir(cwd)
 
