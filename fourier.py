@@ -1,5 +1,5 @@
 import numpy as np
-import finufftpy
+import finufft
 
 
 class FINUFFT:
@@ -23,7 +23,7 @@ class FINUFFT:
         """
         vis = np.empty((self.size_nu,), dtype=np.complex128, order='F')
         img = np.array(img, dtype=np.complex128, order='F')
-        code = finufftpy.nufft2d2(self.u, self.v, vis, isign=-1, eps=1e-8,
+        code = finufft.nufft2d2(self.u, self.v, vis, isign=-1, eps=1e-8,
                                   f=img, fftw=1, upsampfac=1.25)
         return vis
 
@@ -79,10 +79,10 @@ class FINUFFT_NUNU:
         """
         vis = np.empty((self.size_nu,), dtype=np.complex128, order='F')
         img = np.array(img, dtype=np.complex128, order='F')
-        code = finufftpy.nufft2d3(self.x, self.y, img, isign=-1, eps=1e-6,
-                                  s=self.u, t=self.v, f=vis, upsampfac=1.25,
+        code = finufft.nufft2d3(self.x, self.y, img, isign=-1, eps=1e-6,
+                                  s=self.u, t=self.v, out=vis, upsampfac=1.25,
                                   debug=0, spread_debug=0, spread_sort=2,
                                   fftw=1)
-        if code == 1:
-            raise Exception("eps too small in FT")
+        # if code == 1:
+        #     raise Exception("eps too small in FT")
         return vis
