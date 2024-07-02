@@ -2,7 +2,7 @@ Install all dependencies:
 ```shell
 brew tap kazuakiyama/pgplot
 brew tap kazuakiyama/difmap
-brew install libomp fftw eigen pgplot difmap
+brew install boost libomp fftw eigen pgplot difmap
 pip install finufft astropy
 export PGPLOT_DIR=$PGPLOT_DIR
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PGPLOT_DIR
@@ -22,8 +22,9 @@ set(CMAKE_CXX_COMPILER /opt/homebrew/Cellar/gcc/14.1.0_1/bin/g++-14)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lz -std=c++14 -fopenmp -march=native -DNDEBUG -O2 -fext-numeric-literals -I/opt/homebrew/Cellar/boost/1.85.0/include")
 ```
 
-Compile C++ code for radiation transfer:
+Export the same compiler as set in ``CMakeLists.txt`` and compile C++ code for radiation transfer:
 ```shell
+export CXX=/opt/homebrew/Cellar/gcc/14.1.0_1/bin/g++-14
 mkdir Release; cd Release
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make
