@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.11)
 project(simulate)
 
-include_directories("/usr/include/eigen3", "include")
+include_directories("/opt/homebrew/include/eigen3", "include")
 
+set(CMAKE_CXX_COMPILER /opt/homebrew/Cellar/gcc/14.1.0_1/bin/g++-14)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lz -std=c++14 -fopenmp -march=native -DNDEBUG -O2 -fext-numeric-literals")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lz -std=c++14 -fopenmp -march=native -DNDEBUG -O2 -fext-numeric-literals -I/opt/homebrew/Cellar/boost/1.85.0/include")
 set(SOURCE_FILES src/main.cpp src/utils.cpp src/Pixel.cpp src/Ray.cpp
         src/Image.cpp src/ImagePlane.cpp src/Geometry.cpp src/Cone.cpp src/Cylinder.cpp src/Parabaloid.cpp
         include/MyExceptions.h include/logspace.h include/linspace.h src/Intersection.cpp src/BField.cpp
