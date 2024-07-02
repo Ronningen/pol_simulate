@@ -1,3 +1,4 @@
+Install all dependencies
 ```shell
 brew install libomp fftw eigen
 pip install finufft
